@@ -3,11 +3,13 @@ THINGBOARD_HOST="demo.thingsboard.io"
 DEVICE_ID="c306be10-5501-11ec-8109-0996a7665d7e"
 ACCESS_TOKEN="SEC6xT6iL80Ez1DnbPm4"
 MQTT_TOOL_PUB="mosquitto_pub"
-SLEEP_TIME_IN_MINUTES=60  # 60 seconds = 1 minute
+SLEEP_A_MINUTE=60  # 60 seconds = 1 minute
 
 TEMPERATURE_SENSOR_NAME="k10temp-pci-00c3"
 SENSOR_CPU_POWER_NAME="Core_sum_(W)"
 SENSOR_AVERAGE_CPU_FREQ_NAME="average_cpu_freq"
+
+CPUMINER_LOG="/opt/cpuminer-gr-1.2.4.1-x86_64_linux/cpuminer.log"
 
 declare -a mArrayTemperatureValue
 declare -a mArrayCPUPowerValue
@@ -110,28 +112,48 @@ mqtt_public_all_sensor_value() {
       }"
 }
 
+mqtt_public_hashrate_value() {
+  local hashrate=`tail $CPUMINER_LOG  -n50 | grep "Hash rate" | tail -1 | cut -d' ' -f31 | sed 's,h/s,,g'`
+  local hashrate_average=`tail $CPUMINER_LOG  -n50 | grep "Hash rate" | tail -1 | cut -d' ' -f34 | sed 's,h/s,,g'`
+  
+  echo "hashrate: $hashrate"
+  echo "hashrate_average: $hashrate_average"
+
+  $MQTT_TOOL_PUB -d -q 1 -h $THINGBOARD_HOST -t "v1/devices/me/telemetry" -u $ACCESS_TOKEN \
+  -m "{\
+        \"hashrate (h/s)\":${hashrate},\
+        \"hashrate_average (h/s)\":${hashrate_average}\
+      }"
+}
 
 main() {
-  cnt_a_minute=1
-  cnt_5_minutes=0
+  local counter_minutes=1
+  local timeout_1_minute=0
+  local timeout_5_minutes=0
   #sleep 30s, after reboot
   while true
   do
-    let "cnt_5_minutes=${cnt_a_minute} % 5"
+    let "timeout_5_minutes=${counter_minutes} % 5"
     
     # Collect sensor data ever minute
     collect_sensor_data
+    
+    if [[ $timeout_1_minute == 0 ]]; then
+      mqtt_public_hashrate_value
+    fi
+
     # Public all sensors value after 5 minutes
-    if [[ $cnt_5_minutes == 0 ]]; then
+    if [[ $timeout_5_minutes == 0 ]]; then
       #echo "BOOM!!"
       mqtt_public_all_sensor_value
       mArrayTemperatureValue=()
       mArrayCPUPowerValue=()
     fi
+    
 
     # Sleep, do nothing...
-    sleep $SLEEP_TIME_IN_MINUTES
-    let "cnt_a_minute += 1"
+    sleep $SLEEP_A_MINUTE
+    let "counter_minutes += 1"
   done
 }
 # call main
