@@ -1,4 +1,12 @@
 #!/bin/bash
+# crontab -e
+
+# Absolute path to this script, e.g. /home/user/bin/foo.sh
+SCRIPT=$(readlink -f "$0")
+# Absolute path this script is in, thus /home/user/bin
+SCRIPTPATH=$(dirname "$SCRIPT")
+echo $SCRIPTPATH
+
 THINGBOARD_HOST="demo.thingsboard.io"
 DEVICE_ID="c306be10-5501-11ec-8109-0996a7665d7e"
 ACCESS_TOKEN="SEC6xT6iL80Ez1DnbPm4"
@@ -83,7 +91,7 @@ collect_sensor_data() {
   local sensor_value=`sensors $TEMPERATURE_SENSOR_NAME -u | grep temp1_input | cut -d' ' -f4`
   mArrayTemperatureValue+=($sensor_value)
   
-  sensor_value=`/opt/rapl-read-ryzen/ryzen | grep -e "Core sum" | cut -d' ' -f3 | cut -d'W' -f1`
+  sensor_value=`${SCRIPTPATH}/rapl-read-ryzen/ryzen | grep -e "Core sum" | cut -d' ' -f3 | cut -d'W' -f1`
   mArrayCPUPowerValue+=($sensor_value)
 
   sensor_value=`get_average_cpu_freq`
@@ -113,20 +121,51 @@ mqtt_public_all_sensor_value() {
 }
 
 mqtt_public_hashrate_value() {
-  local hashrate=`tail $CPUMINER_LOG  -n50 | grep "Hash rate" | tail -1 | cut -d' ' -f31 | sed 's,h/s,,g'`
-  local hashrate_average=`tail $CPUMINER_LOG  -n50 | grep "Hash rate" | tail -1 | cut -d' ' -f34 | sed 's,h/s,,g'`
+  if [[ -f $CPUMINER_LOG ]]; then
+    local hashrate=`tail $CPUMINER_LOG  -n50 | grep "Hash rate" | tail -1 | cut -d' ' -f31 | sed 's,h/s,,g'`
+    local hashrate_average=`tail $CPUMINER_LOG  -n50 | grep "Hash rate" | tail -1 | cut -d' ' -f34 | sed 's,h/s,,g'`
   
-  echo "hashrate: $hashrate"
-  echo "hashrate_average: $hashrate_average"
+    echo "hashrate: $hashrate"
+    echo "hashrate_average: $hashrate_average"
 
-  $MQTT_TOOL_PUB -d -q 1 -h $THINGBOARD_HOST -t "v1/devices/me/telemetry" -u $ACCESS_TOKEN \
-  -m "{\
-        \"hashrate (h/s)\":${hashrate},\
-        \"hashrate_average (h/s)\":${hashrate_average}\
-      }"
+    $MQTT_TOOL_PUB -d -q 1 -h $THINGBOARD_HOST -t "v1/devices/me/telemetry" -u $ACCESS_TOKEN \
+      -m "{\
+            \"hashrate (h/s)\":${hashrate},\
+            \"hashrate_average (h/s)\":${hashrate_average}\
+          }"
+  fi
+}
+
+check_commands() {
+
+
+  if [[ ! -x "$(command -v git)" ]]; then
+    echo 'Error: git is not installed.' >&2
+    apt-get -y install git
+  fi
+
+  if [[ ! -x "$(command -v mosquitto_pub)" ]]; then
+    echo 'Error: git is not installed.' >&2
+    apt-get -y install mosquitto-clients
+  fi
+  if [[ ! -x "$(command -v sensors)" ]]; then
+    echo 'Error: git is not installed.' >&2
+    apt-get -y install lm-sensors
+  fi
+  if [[ ! -f ${SCRIPTPATH}/rapl-read-ryzen/ryzen ]]; then
+     pushd ${SCRIPTPATH}/
+       git clone "https://github.com/djselbeck/rapl-read-ryzen.git"
+       pushd rapl-read-ryzen
+         gcc -o ryzen ryzen.c -lm
+       popd
+     popd 
+  fi
 }
 
 main() {
+  # Check & install dependencies comands first
+  check_commands
+
   local counter_minutes=1
   local timeout_1_minute=0
   local timeout_5_minutes=0
