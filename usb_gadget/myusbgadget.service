@@ -1,0 +1,16 @@
+# /usr/lib/systemd/system/myusbgadget.service
+# sudo cp myusbgadget.service /usr/lib/systemd/system/
+# sudo systemctl start myusbgadget.service
+# sudo systemctl enable myusbgadget.service
+# sudo systemctl enable getty@ttyGS0.service
+[Unit]
+Description=My USB gadget
+After=systemd-modules-load.service
+ 
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/home/taihv/work/keyboard/enable_usb_hid.sh
+ 
+[Install]
+WantedBy=sysinit.target
